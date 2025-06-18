@@ -1,116 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<base target="_top">
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta charset="UTF-8">
+	<title>Neon + Leaflet</title>
 
-	<title>Quick Start - Leaflet</title>
+	<!-- Leaflet CSS -->
+	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
-	<link rel="shortcut icon" type="image/x-icon" href="docs/images/favicon.ico" />
-
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-
-	<script src="https://code.jquery.com/jquery-3.7.0.slim.min.js" integrity="sha256-tG5mcZUtJsZvyKAxYLVXrmjKBVLd6VpVccqz/r4ypFE=" crossorigin="anonymous"></script>
+	<!-- Leaflet JS als ESM -->
+	<script type="module">
+		import * as L from "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/+esm";
+		window.L = L; // macht es in script.js verfügbar
+	</script>
 	<style>
-		html, body {
-			height: 100%;
-			margin: 0;
-		}
-		.leaflet-container {
-			height: 400px;
-			width: 600px;
-			max-width: 100%;
-			max-height: 100%;
+		#map {
+			height: 600px;
+			width: 100%;
 		}
 	</style>
-
-
 </head>
+
 <body>
 
+<button id="btn-load">Bushaltestellen anzeigen</button>
+<div id="map"></div>
 
-
-<div id="map" style="width: 600px; height: 400px;"></div>
-
-<div>
-Name: <input type="text" id="name" name="name"/>
-</div>
-
-<script type="module">
-	import "data:text/javascript,self.module = {}";
-	import "https://unpkg.com/@neondatabase/serverless";
-	window.N = module.exports;
-</script>
-<script>
-	var southWest = L.latLng(49, -1),	northEast = L.latLng(52, 1);
-	var bounds = L.latLngBounds(southWest, northEast);
-	const map = L.map('map', {maxBounds: bounds, maxBoundsViscosity: 1.0, zoomControl: false}).setView([51.505, -0.09], 13);
-	map.dragging.disable();
-	map.scrollWheelZoom.disable();
-
-	const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-       		maxZoom: 19,
-       		attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-    	}).addTo(map);
-
-	const marker = L.marker([51.5, -0.09]).addTo(map)
-		.bindPopup('<b>Hello world!</b><br />I am a popup.').openPopup();
-
-	const circle = L.circle([51.508, -0.11], {
-       		color: 'red',
-       		fillColor: '#f03',
-       		fillOpacity: 0.5,
-       		radius: 500
-    	}).addTo(map).bindPopup('I am a circle.');
-
-	const polygon = L.polygon([
-       		[51.509, -0.08],
-       		[51.503, -0.06],
-       		[51.51, -0.047]
-    	]).addTo(map).bindPopup('I am a polygon.');
-
-
-	const popup = L.popup()
-		.setLatLng([51.513, -0.09])
-		.setContent('I am a standalone popup.')
-		.openOn(map);
-
-	const db_url = "postgresql://student:woshooyaefohshe0eegh8uSh5sa5pi3y@<your-endpoint-host-here>/dbis2?sslmode=require";
-
-	async function add_point(lon, lat) {
-		const sql = N.neon(db_url);
-                const [pt] = await sql.query(`SELECT st_asgeojson(st_makepoint(${lon},${lat})) as geom`);
-                console.log(pt)
-                const geom = JSON.parse(pt.geom);
-                const geoJson = {"type": "Feature", "geometry": geom, "properties": {"prop1": "something"}};
-                console.log(geoJson);
-                const myStyle = {
-                        "stroke": true,
-                        "color": "red",
-                        "weight": 5
-                };
-                L.geoJSON(geoJson, {
-                        style: myStyle
-                }).addTo(map);
-
-	}
-
-	function onMapClick(e) {
-		console.log($("#name").val());
-		popup.setLatLng(e.latlng)
-			.setContent(`You clicked the map at ${e.latlng.toString()}`)
-			.openOn(map);
-		console.log(e.latlng);
-		add_point(e.latlng.lng, e.latlng.lat);
-   	}
-
-	map.on('click', onMapClick);
-
-</script>
-
-
-
+<!-- Dein externes Script -->
+<script type="module" src="indexScript.js"></script>
 </body>
+
 </html>
