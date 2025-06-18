@@ -21,34 +21,27 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 }).addTo(map);
 
-// 3. Bus-Haltestellen laden
+/* -----------------------------------------------------------
+   Bushaltestellen laden – jetzt nur noch Funktions-Aufruf
+----------------------------------------------------------- */
 async function ladeHaltestellen() {
-    const rows = await sql`
-        SELECT ST_AsGeoJSON(ST_Transform(way, 4326)) AS geojson
-        FROM osm.planet_osm_point
-        WHERE (
-                    highway = 'bus_stop'
-                OR amenity = 'bus_station'
-                OR tags -> 'highway' = 'bus_stop'
-                OR tags -> 'amenity' = 'bus_station'
-            )
-          AND ST_DWithin(
-                ST_Transform(way, 4326)::geography,
-                ST_SetSRID(ST_MakePoint(${9.171392}, ${47.664316}), 4326)::geography,
-                ${1000}
-              );
-    `;
+    const lon = 9.171392;
+    const lat = 47.664316;
+    const radius = 1000;
 
-    console.log("Antwort von DB:", rows.length, "Einträge");
-    console.log(rows);
+    const result = await sql.query(
+        `SELECT * FROM public.get_nearby_bus_stops($1::double precision, $2::double precision, $3::integer);`,
+        [lon, lat, radius]
+    );
 
-    rows.forEach(row => {
-        const gj = row.geojson ?? Object.values(row)[0];
-        console.log("GeoJSON:", gj);
-        L.geoJSON(JSON.parse(gj)).addTo(map);
+    console.log("Bushaltestellen:", result.rows.length);
+    result.rows.forEach(r => {
+        const geo = JSON.parse(r.geojson);
+        L.geoJSON(geo, {
+            pointToLayer: (_, ll) => L.circleMarker(ll, { radius: 6, color: "#0066ff" })
+        }).addTo(map);
     });
 }
 
-// 4. Testverbindung & Button-Event
-console.log(await sql`SELECT 1 + 1`);
-document.getElementById('btn-load').addEventListener('click', ladeHaltestellen);
+document.getElementById("btn-load")
+    .addEventListener("click", ladeHaltestellen);
