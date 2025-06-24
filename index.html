@@ -17,13 +17,39 @@
 			height: 600px;
 			width: 100%;
 		}
+		.custom-icon-a {
+			background-color: #32CD32; /* grün */
+			color: white;
+			text-align: center;
+			font-weight: bold;
+			border-radius: 50%;
+			width: 24px;
+			height: 24px;
+			line-height: 24px;
+			font-size: 14px;
+		}
+
+		.custom-icon-b {
+			background-color: #1E90FF; /* blau */
+			color: white;
+			text-align: center;
+			font-weight: bold;
+			border-radius: 50%;
+			width: 24px;
+			height: 24px;
+			line-height: 24px;
+			font-size: 14px;
+		}
 	</style>
 </head>
 
 <body>
 
 <button id="btn-load">Bushaltestellen anzeigen</button>
+<button id="btn-loadNextBusStop">Bushaltestellen anzeigen</button>
+<button id="btn-showStopDistance">Distanz berechnen</button>
 <div id="map"></div>
+<div id="output"></div>
 
 <!-- Dein externes Script -->
 <script type="module" src="indexScript.js"></script>
