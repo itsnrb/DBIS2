@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1" name="viewport">
+
+    <title>A Maps</title>
+
+    <link href="docs/images/favicon.ico" rel="shortcut icon" type="image/x-icon"/>
+
+    <link crossorigin="" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" rel="stylesheet"/>
+    <script crossorigin=""
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script crossorigin="anonymous"
+            integrity="sha256-tG5mcZUtJsZvyKAxYLVXrmjKBVLd6VpVccqz/r4ypFE=" src="https://code.jquery.com/jquery-3.7.0.slim.min.js"></script>
+
+    <style>
+        body {
+          height: 100%;
+          width: 100%;
+        }
+
+        #map {
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          right: 0;
+          left: 0;
+          z-index: 1;
+        }
+
+
+        #btn-open-sidebar {
+          position: absolute;
+          top: 20px;
+          left: 20px;
+          z-index: 2;
+        }
+
+
+      .sidebar {
+        position: absolute;
+        width: 320px;
+        height: 420px;
+        background: #fff;
+        padding: 12px;
+        display: none;
+        z-index: 3;
+      }
+
+      .close-btn {
+        position: absolute;
+        top: 6px;
+        right: 10px;
+        color: #666;
+        padding: 5 px;
+      }
+
+
+      .waypoint-controls {
+        display: flex;
+      }
+
+      button {
+        margin: 2px;
+        font-size: 13px;
+        flex: 1;
+        padding: 6px;
+      }
+
+    </style>
+
+<body>
+
+
+<div id="map"></div>
+
+<button id="btn-open-sidebar" onclick="openSidebar()">Busverbindung suchen</button>
+
+<div class="sidebar" id="sidebar">
+    <button class="close-btn" id="close-sidebar" onclick="document.getElementById('sidebar').style.display='none'">×
+    </button>
+
+    <div>
+        <label>Startkoordinaten:</label>
+        <div id="start-coords">–</div>
+    </div>
+    <div class="waypoint-controls">
+        <button id="btn-set-start-postion" onclick="setPosition('start')">Startpunkt auswählen</button>
+    </div>
+    <div>
+        <label>Zielkoordinaten:</label>
+        <div id="dest-coords">–</div>
+    </div>
+    <div class="waypoint-controls">
+        <button id="btn-set-end-postion" onclick="setPosition('dest')">Ziel auswählen</button>
+    </div>
+    <div>
+        <label>Ein-/Ausblenden:</label>
+    </div>
+    <div class="waypoint-controls">
+        <button id="btn-show-line" onclick="getAirline()">Luftlinie</button>
+        <button id="btn-show-busstops" onclick="getBusstops()">Bushaltestellen</button>
+    </div>
+    <div class="waypoint-controls">
+        <button id="btn-show-route-direkt" onclick="showRoute('direct')">Route (direkt)</button>
+
+    </div>
+    <div class="route-info" id="route-info">
+
+    </div>
+</div>
+</div>
+
+
+<script type="module">
+    import "data:text/javascript,self.module = {}";
+    import "https://unpkg.com/@neondatabase/serverless";
+    window.N = module.exports;
+</script>
+<script>
+    //Map einbinden
+	var southWest = L.latLng(47.63, 9.10),
+    northEast = L.latLng(47.69, 9.25);
+	var bounds = L.latLngBounds(southWest, northEast);
+	const map = L.map('map', {maxBounds: bounds, maxBoundsViscosity: 1.0, zoomControl: false}).setView([51.505, -0.09], 13); map.dragging.disable(); map.scrollWheelZoom.disable();
+    map.dragging.enable();
+    map.scrollWheelZoom.enable();
+
+	const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+       		maxZoom: 19,
+       		attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    	}).addTo(map);
+
+
+	//DB Verbindung
+	const db_url = "postgresql://student:woshooyaefohshe0eegh8uSh5sa5pi3y@ep-damp-snow-a2z5f2zp.eu-central-1.aws.neon.tech/dbis2?";
+    $(document).ready(
+        async function () {
+            const sql = N.neon(db_url);
+            await sql.query(`SELECT kn_delete_geojson_cache()`);
+            console.log('Cache gelöscht.');
+        }
+    );
+
+
+    //Hilffunktionen
+    //Marker, Icons & Co
+        // Einsatz: Startpostion
+        const blueIcon = L.icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+            iconSize: [8, 12],
+            iconAnchor: [4, 12],
+            popupAnchor: [1, -34],
+            shadowSize: [4, 4]
+          });
+       // Einsatz: Bushaltestellen
+        function createCircleMarker (latlng, color) {
+          return L.circleMarker(latlng, {
+            radius: 3,
+            color: color,
+            fillColor: 'white',
+            fillOpacity: 1,
+            weight: 2
+          });
+        }
+        //Löschen von Layern, geom. als GeoJson in db kn_geojson_cache
+        let layers = []; // globale Layer-Verwaltung
+        function clearLayers(indexes) {
+          indexes.forEach(i => {
+            if (layers[i]) {
+              map.removeLayer(layers[i]);
+              layers[i] = null;
+            }
+          });
+        }
+        function clearInfo() {
+          const routeInfo = document.getElementById("route-info");
+          if (routeInfo) {
+            routeInfo.innerHTML = "";
+          }
+        }
+    // Sidebar öffen:
+    map.once('click',openSidebar); //per Map click
+    function openSidebar() {
+        document.getElementById('sidebar').style.display = 'block';
+    }
+
+
+
+    async function setPosition(type) {
+      map.once('click', async function (e) {
+        const sql = N.neon(db_url);
+        const query = `SELECT kn_setposition($1, $2, $3)`;
+        await sql.query(query, [type, e.latlng.lat, e.latlng.lng]);
+        console.log(`${type === 'start' ? 'Start' : 'Ziel'}position gespeichert.`);
+
+        if (type === 'start') {
+        clearLayers([0,2,4, 5, 6, 7, 8, 9]);
+        } else if (type === 'dest') {
+          clearLayers([1,3, 4, 5, 6, 7, 8, 9]);
+        }
+
+        getPosition(type);
+      });
+    }
+
+    async function getPosition(type) {
+      const sql = N.neon(db_url);
+      const result = await sql.query(`SELECT kn_getposition($1)`, [type]);
+      console.log(result);
+      const geojson = result[0]?.kn_getposition;
+      console.log(geojson);
+
+      const marker = L.marker([geojson.lat, geojson.lng], {icon: blueIcon}).addTo(map);
+      layers[type === 'start' ? 0 : 1] = marker;
+      getBusstop(type);
+    }
+
+    // DB trigger Funktion on Update ermittel speichert automatisch Bushaltestelle im Cache
+    async function getBusstop(type) {
+      const sql = N.neon(db_url);
+      const result = await sql.query(`SELECT kn_getBusstop($1)`, [type]);
+      console.log(result);
+
+      const geojson = result?.[0]?.kn_getbusstop;
+      console.log(geojson);
+
+      const marker = createCircleMarker([geojson.lat, geojson.lng], "red").addTo(map);
+      layers[type === 'start' ? 2 : 3] = marker;
+    }
+
+
+   async function getAirline() {
+     clearLayers([4, 5, 6, 7, 8, 9]);
+     clearInfo();
+     const sql = N.neon(db_url);
+
+      const query = `SELECT kn_get_airline_geojson()`;
+      const result = await sql.query(query);
+      console.log(result);
+
+      const geojson = result?.[0]?.kn_get_airline_geojson;
+      console.log(geojson);
+
+      console.log(geojson.geometry.coordinates);
+
+
+      const line = L.geoJSON(geojson, {
+          style: {
+            color: 'yellow',
+            dashArray: '6 6',
+            weight: 3,
+            opacity: 0.8
+          }
+        }).addTo(map);
+
+        layers[4] = line;
+        const distanceKm = (geojson.properties.length_m / 1000).toFixed(2);
+        const routeInfo = document.getElementById("route-info");
+        routeInfo.innerHTML = `
+        <div">
+          <strong>Luftlinie zwischen:</strong><br>
+          Starthaltestelle → Zielhaltestelle<br>
+          <strong>Entfernung:</strong> ${distanceKm} km
+        </div>
+      `;
+    }
+
+    async function showRoute(type) {
+      clearLayers([4, 5, 6, 7, 8, 9]);
+      clearInfo();
+      await getStartFootroute();
+      await getBusrouteDirect();
+      await getDestFootroute();
+    }
+
+   async function getBusrouteDirect() {
+    const sql = N.neon(db_url);
+
+      const query = `SELECT kn_get_busroute_direct_geojson()`;
+      const result = await sql.query(query);
+      console.log(result);
+
+      const geojson = result?.[0]?.kn_get_busroute_direct_geojson;
+      console.log(geojson);
+
+      console.log(geojson.geometry.coordinates);
+
+
+      layers[5] = L.geoJSON(geojson, {
+          style: {
+
+          color: 'red',
+        weight: 5,
+        opacity: 0.9
+        }
+      }).addTo(map);
+
+      const distanceKm = (geojson.properties.length_m / 1000).toFixed(2);
+
+      const durMin = (geojson.properties.duration_s / 60).toFixed(1);
+      const routeInfo = document.getElementById("route-info");
+      routeInfo.innerHTML += `
+        <strong>Busstrecke:</strong><br>
+          Starthaltestelle → Zielhaltestelle<br>
+        ${distanceKm} km ~${durMin} Min.<br>
+      `;
+    }
+
+    async function getStartFootroute() {
+      const sql = N.neon(db_url);
+      const query = `SELECT kn_get_start_footroute_geojson()`;
+      const result = await sql.query(query);
+      console.log(result);
+
+      const geojson = result?.[0]?.kn_get_start_footroute_geojson;
+      console.log(geojson);
+
+      console.log(geojson.geometry.coordinates);
+
+      layers[7] = L.geoJSON(geojson, {
+          style: {
+
+          color: 'orange',
+        weight: 5,
+        opacity: 0.7
+        }
+      }).addTo(map);
+
+      const distanceKm = (geojson.properties.length_m / 1000).toFixed(2);
+
+      const durMin = (geojson.properties.duration_s / 60).toFixed(1);
+      const routeInfo = document.getElementById("route-info");
+      routeInfo.innerHTML += `
+        <strong>Fußweg:</strong><br>
+          Startposition → Starthaltestelle<br>
+        ${distanceKm} km ~${durMin} Min.<br>
+      `;
+    }
+
+    async function getDestFootroute() {
+        const sql = N.neon(db_url);
+          const query = `SELECT kn_get_dest_footroute_geojson()`;
+          const result = await sql.query(query);
+          console.log(result);
+
+          const geojson = result?.[0]?.kn_get_dest_footroute_geojson;
+          console.log(geojson);
+
+          console.log(geojson.geometry.coordinates);
+
+          layers[8] = L.geoJSON(geojson, {
+              style: {
+
+              color: 'blue',
+            weight: 3,
+            opacity: 0.7
+            }
+          }).addTo(map);
+
+          const distanceKm = (geojson.properties.length_m / 1000).toFixed(2);
+
+          const durMin = (geojson.properties.duration_s / 60).toFixed(1);
+          const routeInfo = document.getElementById("route-info");
+          routeInfo.innerHTML += `
+            <strong>Fußweg:</strong><br>
+              Zielhaltestelle → Zielposition<br>
+            ${distanceKm} km ~${durMin} Min.<br>
+          `;
+        }
+
+
+    async function getBusstops() {
+      clearLayers([4, 5, 6, 7, 8,9]);
+      clearInfo();
+      const sql = N.neon(db_url);
+
+        const result = await sql`SELECT kn_get_route_busstops_geojson()`;
+        const geojson = result?.[0]?.kn_get_route_busstops_geojson;
+
+        const group = L.featureGroup(); // Neue Gruppe für alle Marker
+
+        geojson.features.forEach(feature => {
+        const coords = feature.geometry.coordinates;
+        const latlng = [coords[1], coords[0]];
+
+        const marker = L.circleMarker(latlng, {
+          color: 'red',
+          radius: 2,
+          fillOpacity: 0.5
+        });
+
+        group.addLayer(marker);
+      });
+
+      group.addTo(map);
+      layers[9] = group;
+
+    }
+
+</script>
+</body>
+
+</html>
